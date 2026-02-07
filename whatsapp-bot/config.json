@@ -1,0 +1,11 @@
+{
+  "botName": "Advanced WhatsApp Bot",
+  "prefix": ".",
+  "timezone": "Asia/Jakarta",
+  "owner": "",
+  "downloaderAPI": "",
+  "nsfwEnabled": false,
+  "gameTimeout": 30,
+  "cooldownTime": 5,
+  "ownerRegistered": false
+}
