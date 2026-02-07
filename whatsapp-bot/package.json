@@ -26,7 +26,8 @@
     "node-fetch": "^2.7.0",
     "form-data": "^4.0.0",
     "chalk": "^4.1.2",
-    "moment-timezone": "^0.5.45"
+    "moment-timezone": "^0.5.45",
+    "qrcode-terminal": "^0.12.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.3"

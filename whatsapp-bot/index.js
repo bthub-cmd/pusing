@@ -1,9 +1,10 @@
-const { default: makeWASocket, useMultiFileAuthState, downloadMediaMessage, DisconnectReason } = require("@whiskeysockets/baileys");
+const { default: makeWASocket, useMultiFileAuthState, downloadMediaMessage, DisconnectReason, fetchLatestBaileysVersion } = require("@whiskeysockets/baileys");
 const pino = require("pino");
 const fs = require("fs-extra");
 const path = require("path");
 const sharp = require("sharp");
 const chalk = require("chalk");
+const qrcode = require("qrcode-terminal");
 const { loadConfig, saveConfig, checkCooldown, generateCode, log } = require("./utils/helpers");
 const { handleOwnerCommands } = require("./commands/owner");
 const { handleAdminCommands } = require("./commands/admin");
@@ -43,11 +44,12 @@ async function startBot() {
     console.log(chalk.cyan("========================================\n"));
 
     const { state, saveCreds } = await useMultiFileAuthState("./session");
+    const { version } = await fetchLatestBaileysVersion();
 
     const sock = makeWASocket({
         logger: pino({ level: "silent" }),
         auth: state,
-        printQRInTerminal: true,
+        version,
         browser: ["WhatsApp Bot", "Chrome", "1.0.0"]
     });
 
@@ -55,7 +57,18 @@ async function startBot() {
 
     // Connection update
     sock.ev.on("connection.update", (update) => {
-        const { connection, lastDisconnect } = update;
+        const { connection, lastDisconnect, qr } = update;
+        
+        // Handle QR Code
+        if (qr) {
+            console.log(chalk.cyan("\n========================================"));
+            console.log(chalk.yellow("  📱 SCAN QR CODE BELOW"));
+            console.log(chalk.cyan("========================================\n"));
+            qrcode.generate(qr, { small: true });
+            console.log(chalk.cyan("\n========================================"));
+            console.log(chalk.yellow("  Scan dengan WhatsApp kamu!"));
+            console.log(chalk.cyan("========================================\n"));
+        }
         
         if (connection === "close") {
             const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
@@ -64,10 +77,17 @@ async function startBot() {
             
             if (shouldReconnect) {
                 log("Reconnecting...", "warn");
-                startBot();
+                setTimeout(() => startBot(), 5000);
+            } else {
+                log("Logged out. Delete session folder and restart.", "error");
             }
         } else if (connection === "open") {
             log("Bot connected successfully!", "success");
+            console.log(chalk.green("\n========================================"));
+            console.log(chalk.cyan("  ✅ BOT SUDAH TERHUBUNG!"));
+            console.log(chalk.green("========================================"));
+            console.log(chalk.yellow("  📝 Kirim .menu untuk melihat commands"));
+            console.log(chalk.green("========================================\n"));
         }
     });
 
