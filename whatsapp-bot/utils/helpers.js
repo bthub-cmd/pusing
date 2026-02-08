@@ -71,10 +71,11 @@ async function isAdmin(sock, groupJid, userJid) {
 async function isBotAdmin(sock, groupJid) {
     try {
         const groupMetadata = await sock.groupMetadata(groupJid);
-        const botJid = sock.user.id;
+        const botJid = sock.user.id.split(':')[0] + "@s.whatsapp.net";
         const participant = groupMetadata.participants.find(p => p.id === botJid);
         return participant && (participant.admin === "admin" || participant.admin === "superadmin");
     } catch (error) {
+        console.error("Error checking bot admin:", error);
         return false;
     }
 }
@@ -119,6 +120,36 @@ function getTime(timezone = "Asia/Jakarta") {
 // Get current date
 function getDate(timezone = "Asia/Jakarta") {
     return moment.tz(timezone).format("DD/MM/YYYY");
+}
+
+// Load banner config
+function loadBanner() {
+    const config = loadConfig();
+    return config.banner || {
+        title: "🌸 Aphrodite Bot 🌸",
+        subtitle: "by Franza",
+        description: "Halo! Aku adalah bot multifungsi untuk membantu kamu di grup.",
+        disclaimer: "⚠️ Educational Purpose Only",
+        image: null,
+        enabled: true
+    };
+}
+
+// Save banner config
+function saveBanner(bannerData) {
+    const config = loadConfig();
+    config.banner = bannerData;
+    saveConfig(config);
+}
+
+// Format banner text
+function formatBanner(banner) {
+    let text = "";
+    if (banner.title) text += `${banner.title}\n`;
+    if (banner.subtitle) text += `${banner.subtitle}\n\n`;
+    if (banner.description) text += `${banner.description}\n\n`;
+    if (banner.disclaimer) text += `${banner.disclaimer}\n`;
+    return text;
 }
 
 // Random element from array
@@ -186,5 +217,8 @@ module.exports = {
     log,
     getMentions,
     cleanNumber,
-    toJid
+    toJid,
+    loadBanner,
+    saveBanner,
+    formatBanner
 };

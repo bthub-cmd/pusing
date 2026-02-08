@@ -7,5 +7,13 @@
   "nsfwEnabled": false,
   "gameTimeout": 30,
   "cooldownTime": 5,
-  "ownerRegistered": false
+  "ownerRegistered": false,
+  "banner": {
+    "title": "🌸 Aphrodite Bot 🌸",
+    "subtitle": "by Franza",
+    "description": "Halo! Aku adalah bot multifungsi untuk membantu kamu di grup.",
+    "disclaimer": "⚠️ Educational Purpose Only",
+    "image": null,
+    "enabled": true
+  }
 }

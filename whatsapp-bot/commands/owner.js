@@ -1,6 +1,7 @@
-const { loadConfig, saveConfig, isOwner, log } = require("../utils/helpers");
+const { loadConfig, saveConfig, isOwner, log, loadBanner, saveBanner, formatBanner } = require("../utils/helpers");
 const fs = require("fs-extra");
 const path = require("path");
+const { downloadMediaMessage } = require("@whiskeysockets/baileys");
 
 async function handleOwnerCommands(sock, msg, body, from) {
     const config = loadConfig();
@@ -132,11 +133,140 @@ async function handleOwnerCommands(sock, msg, body, from) {
             `🔗 Downloader API: ${config.downloaderAPI || "Not set"}\n` +
             `🔞 NSFW: ${config.nsfwEnabled ? "Enabled" : "Disabled"}\n` +
             `⏱️ Game Timeout: ${config.gameTimeout}s\n` +
-            `⏳ Cooldown: ${config.cooldownTime}s`;
+            `⏳ Cooldown: ${config.cooldownTime}s\n\n` +
+            `🎨 Banner: ${config.banner?.enabled ? "Custom" : "Default"}`;
 
         await sock.sendMessage(from, {
             text: configText
         }, { quoted: msg });
+        return;
+    }
+
+    // Set banner title
+    if (body.startsWith(".setbanner ")) {
+        const title = body.replace(".setbanner ", "").trim();
+        const banner = loadBanner();
+        banner.title = title;
+        saveBanner(banner);
+
+        await sock.sendMessage(from, {
+            text: `✅ *Banner title diupdate!*\n\n${title}`
+        }, { quoted: msg });
+        log(`Banner title updated: ${title}`, "success");
+        return;
+    }
+
+    // Set banner subtitle
+    if (body.startsWith(".setsubtitle ")) {
+        const subtitle = body.replace(".setsubtitle ", "").trim();
+        const banner = loadBanner();
+        banner.subtitle = subtitle;
+        saveBanner(banner);
+
+        await sock.sendMessage(from, {
+            text: `✅ *Banner subtitle diupdate!*\n\n${subtitle}`
+        }, { quoted: msg });
+        log(`Banner subtitle updated: ${subtitle}`, "success");
+        return;
+    }
+
+    // Set banner description
+    if (body.startsWith(".setdesc ")) {
+        const desc = body.replace(".setdesc ", "").trim();
+        const banner = loadBanner();
+        banner.description = desc;
+        saveBanner(banner);
+
+        await sock.sendMessage(from, {
+            text: `✅ *Banner description diupdate!*\n\n${desc}`
+        }, { quoted: msg });
+        log(`Banner description updated`, "success");
+        return;
+    }
+
+    // Set banner image
+    if (body === ".setbannerimg") {
+        if (!msg.message.imageMessage && !msg.message.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage) {
+            await sock.sendMessage(from, {
+                text: "❌ *Reply ke gambar!*\n\nKirim gambar lalu reply dengan .setbannerimg"
+            }, { quoted: msg });
+            return;
+        }
+
+        try {
+            const buffer = await downloadMediaMessage(
+                msg,
+                "buffer",
+                {},
+                { logger: require("pino")(), reuploadRequest: sock.updateMediaMessage }
+            );
+
+            const base64 = buffer.toString("base64");
+            const banner = loadBanner();
+            banner.image = base64;
+            saveBanner(banner);
+
+            await sock.sendMessage(from, {
+                text: `✅ *Banner image berhasil diset!*\n\nGambar akan muncul di menu.`
+            }, { quoted: msg });
+
+            log(`Banner image updated`, "success");
+        } catch (error) {
+            await sock.sendMessage(from, {
+                text: `❌ *Gagal set banner image!*\n\n${error.message}`
+            }, { quoted: msg });
+        }
+        return;
+    }
+
+    // Remove banner image
+    if (body === ".removebannerimg") {
+        const banner = loadBanner();
+        banner.image = null;
+        saveBanner(banner);
+
+        await sock.sendMessage(from, {
+            text: `✅ *Banner image dihapus!*`
+        }, { quoted: msg });
+        log(`Banner image removed`, "success");
+        return;
+    }
+
+    // Preview banner
+    if (body === ".previewbanner") {
+        const banner = loadBanner();
+        const bannerText = formatBanner(banner);
+
+        if (banner.image) {
+            const imageBuffer = Buffer.from(banner.image, "base64");
+            await sock.sendMessage(from, {
+                image: imageBuffer,
+                caption: bannerText
+            }, { quoted: msg });
+        } else {
+            await sock.sendMessage(from, {
+                text: `📋 *BANNER PREVIEW*\n\n${bannerText}`
+            }, { quoted: msg });
+        }
+        return;
+    }
+
+    // Reset banner
+    if (body === ".resetbanner") {
+        const defaultBanner = {
+            title: "🌸 Aphrodite Bot 🌸",
+            subtitle: "by Franza",
+            description: "Halo! Aku adalah bot multifungsi untuk membantu kamu di grup.",
+            disclaimer: "⚠️ Educational Purpose Only",
+            image: null,
+            enabled: true
+        };
+        saveBanner(defaultBanner);
+
+        await sock.sendMessage(from, {
+            text: `✅ *Banner direset ke default!*\n\n${formatBanner(defaultBanner)}`
+        }, { quoted: msg });
+        log(`Banner reset to default`, "success");
         return;
     }
 }

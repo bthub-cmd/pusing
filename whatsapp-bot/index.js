@@ -15,10 +15,22 @@ const { handleNSFWCommands } = require("./commands/nsfw");
 // Generate auth code on first run
 function initAuthCode() {
     const authCodePath = path.join(__dirname, "auth-code.txt");
+    const config = loadConfig();
     
-    if (!fs.existsSync(authCodePath)) {
-        const code = generateCode(16);
-        fs.writeFileSync(authCodePath, code);
+    // Always show code if owner not registered yet
+    if (!config.ownerRegistered) {
+        let code;
+        
+        if (fs.existsSync(authCodePath)) {
+            // Read existing code
+            code = fs.readFileSync(authCodePath, "utf-8").trim();
+        } else {
+            // Generate new code
+            code = generateCode(16);
+            fs.writeFileSync(authCodePath, code);
+        }
+        
+        // Always display code
         console.log(chalk.green("\n========================================"));
         console.log(chalk.yellow("  🔐 OWNER REGISTRATION CODE"));
         console.log(chalk.green("========================================"));
@@ -27,6 +39,8 @@ function initAuthCode() {
         console.log(chalk.yellow("  Gunakan command: .code <kode>"));
         console.log(chalk.yellow("  untuk registrasi sebagai owner!"));
         console.log(chalk.green("========================================\n"));
+    } else {
+        console.log(chalk.green("\n✅ Owner sudah terdaftar!\n"));
     }
 }
 
@@ -115,12 +129,25 @@ async function startBot() {
             const senderNumber = sender.split("@")[0];
             log(`Command from ${senderNumber}: ${body}`, "info");
 
-            // Cooldown check (skip for owner)
+            // Cooldown check (skip for owner and certain commands)
+            const skipCooldown = [".code", ".menu", ".help"];
             const cooldown = checkCooldown(sender, config);
-            if (cooldown.onCooldown && !body.startsWith(".code")) {
-                await sock.sendMessage(from, {
-                    text: `⏳ *Cooldown!*\n\nTunggu ${cooldown.remaining} detik lagi.`
+            
+            if (cooldown.onCooldown && !skipCooldown.some(cmd => body.startsWith(cmd))) {
+                const cooldownMsg = await sock.sendMessage(from, {
+                    text: `⏳ *Cooldown!*\n\nTunggu ${cooldown.remaining} detik lagi...`
                 }, { quoted: msg });
+
+                // Store cooldown info for later reply
+                setTimeout(async () => {
+                    try {
+                        // User's original request will be processed after cooldown
+                        // This is handled by the normal command flow
+                    } catch (error) {
+                        log(`Cooldown timer error: ${error.message}`, "error");
+                    }
+                }, cooldown.remaining * 1000);
+                
                 return;
             }
 
@@ -154,7 +181,10 @@ async function startBot() {
                 );
 
                 const sticker = await sharp(buffer)
-                    .resize(512, 512, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+                    .resize(512, 512, { 
+                        fit: "contain", 
+                        background: { r: 0, g: 0, b: 0, alpha: 0 } 
+                    })
                     .webp({ quality: 80 })
                     .toBuffer();
 
@@ -164,35 +194,83 @@ async function startBot() {
 
             // Sticker to image
             if (msg.message.stickerMessage && body === ".toimg") {
-                const buffer = await downloadMediaMessage(
-                    msg,
-                    "buffer",
-                    {},
-                    { logger: pino(), reuploadRequest: sock.updateMediaMessage }
-                );
+                try {
+                    const buffer = await downloadMediaMessage(
+                        msg,
+                        "buffer",
+                        {},
+                        { logger: pino(), reuploadRequest: sock.updateMediaMessage }
+                    );
 
-                const image = await sharp(buffer)
-                    .png()
-                    .toBuffer();
+                    // Convert WebP to PNG
+                    const image = await sharp(buffer)
+                        .png()
+                        .toBuffer();
 
-                await sock.sendMessage(from, { image: image }, { quoted: msg });
-                log("Sticker to image converted", "success");
+                    await sock.sendMessage(from, { 
+                        image: image,
+                        caption: "✅ Sticker converted to image"
+                    }, { quoted: msg });
+                    
+                    log("Sticker to image converted", "success");
+                } catch (error) {
+                    log(`Error converting sticker: ${error.message}`, "error");
+                    await sock.sendMessage(from, {
+                        text: `❌ *Gagal convert sticker!*\n\n${error.message}`
+                    }, { quoted: msg });
+                }
             }
 
-            // Brat style text sticker
+            // Brat style text sticker with color presets
             if (body.startsWith(".brat ")) {
-                const text = body.replace(".brat ", "");
+                const args = body.replace(".brat ", "").trim().split(" ");
+                let colorPreset = "default";
+                let text = "";
+
+                // Check if first word is a color preset
+                const presets = ["green", "pink", "blue", "dark"];
+                if (presets.includes(args[0].toLowerCase())) {
+                    colorPreset = args[0].toLowerCase();
+                    text = args.slice(1).join(" ");
+                } else {
+                    text = args.join(" ");
+                }
+
+                if (!text) {
+                    await sock.sendMessage(from, {
+                        text: "❌ *Teks kosong!*\n\n" +
+                              "*Format:*\n" +
+                              "• .brat <text> - White/Black (default)\n" +
+                              "• .brat green <text> - Green/Black\n" +
+                              "• .brat pink <text> - Pink/White\n" +
+                              "• .brat blue <text> - Blue/White\n" +
+                              "• .brat dark <text> - Black/White"
+                    }, { quoted: msg });
+                    return;
+                }
+
                 const { createCanvas } = require("canvas");
+
+                // Color schemes
+                const colors = {
+                    default: { bg: "#FFFFFF", text: "#000000" },  // White/Black
+                    green: { bg: "#8ACE00", text: "#000000" },    // Original brat
+                    pink: { bg: "#FF69B4", text: "#FFFFFF" },     // Pink/White
+                    blue: { bg: "#1E90FF", text: "#FFFFFF" },     // Blue/White
+                    dark: { bg: "#000000", text: "#FFFFFF" }      // Black/White
+                };
+
+                const scheme = colors[colorPreset];
 
                 const width = 512;
                 const height = 512;
                 const canvas = createCanvas(width, height);
                 const ctx = canvas.getContext("2d");
 
-                ctx.fillStyle = "#8ACE00";
+                ctx.fillStyle = scheme.bg;
                 ctx.fillRect(0, 0, width, height);
 
-                ctx.fillStyle = "#000000";
+                ctx.fillStyle = scheme.text;
                 ctx.font = "bold 48px Arial";
                 ctx.textAlign = "center";
                 ctx.textBaseline = "middle";
@@ -202,66 +280,143 @@ async function startBot() {
                 const buffer = canvas.toBuffer("image/png");
 
                 const sticker = await sharp(buffer)
+                    .resize(512, 512, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
                     .webp({ quality: 90 })
                     .toBuffer();
 
                 await sock.sendMessage(from, { sticker: sticker }, { quoted: msg });
-                log("Brat sticker created", "success");
+                log(`Brat sticker created (${colorPreset})`, "success");
             }
 
-            // Menu command
+            // Menu command with interactive button
             if (body === ".menu" || body === ".help") {
-                const menuText = `🤖 *${config.botName}*\n\n` +
-                    `*👑 OWNER COMMANDS:*\n` +
-                    `├ .code <16digit> - Register owner (1x only)\n` +
-                    `├ .apidownload <url> - Set downloader API\n` +
-                    `├ .settimeout <detik> - Set game timeout\n` +
-                    `├ .nsfwtoggle - Toggle NSFW mode\n` +
-                    `└ .config - Show bot config\n\n` +
-                    `*👥 ADMIN COMMANDS:*\n` +
-                    `├ .kick @user - Kick member\n` +
-                    `├ .add <nomor> - Add member\n` +
-                    `├ .promote @user - Promote to admin\n` +
-                    `├ .demote @user - Demote admin\n` +
-                    `├ .tagall <pesan> - Tag all members\n` +
-                    `├ .hidetag <pesan> - Hidden tag\n` +
-                    `├ .groupinfo - Group info\n` +
-                    `├ .listonline - List members\n` +
-                    `├ .group <open/close> - Open/close group\n` +
-                    `├ .setname <nama> - Change group name\n` +
-                    `├ .setdesc <text> - Change description\n` +
-                    `└ .link - Get invite link\n\n` +
-                    `*📥 DOWNLOADER:*\n` +
-                    `├ .ytmp4 <url/query> - YouTube video\n` +
-                    `├ .ytmp3 <url/query> - YouTube audio\n` +
-                    `├ .yts <query> - Search YouTube\n` +
-                    `├ .tiktok <url> - TikTok no watermark\n` +
-                    `├ .tiktokmp3 <url> - TikTok audio\n` +
-                    `├ .ig <url> - Instagram post/reel\n` +
-                    `├ .fb <url> - Facebook video\n` +
-                    `├ .twitter <url> - Twitter media\n` +
-                    `├ .dl <url> - Auto-detect platform\n` +
-                    `├ .pinterest <url> - Pinterest image\n` +
-                    `├ .soundcloud <url> - SoundCloud audio\n` +
-                    `└ .mediafire <url> - MediaFire file\n\n` +
-                    `*🎮 GAMES:*\n` +
-                    `├ .tebakkata - Guess the word\n` +
-                    `├ .tebakbendera - Guess the flag\n` +
-                    `├ .asahotak - Brain teaser\n` +
-                    `├ .hint - Show hint\n` +
-                    `├ .leaderboard - Top players\n` +
-                    `└ .mystats - Your statistics\n\n` +
-                    `*🔞 NSFW:* (Owner only toggle)\n` +
-                    `└ .nsfwmenu - Show NSFW commands\n\n` +
-                    `*🎨 STICKER:*\n` +
-                    `├ .sticker - Image to sticker\n` +
-                    `├ .toimg - Sticker to image\n` +
-                    `└ .brat <text> - Brat style sticker\n\n` +
-                    `_Prefix: ${config.prefix}_`;
+                const banner = loadBanner();
+                const userIsOwner = isOwner(sender, config);
 
-                await sock.sendMessage(from, {
-                    text: menuText
-                }, { quoted: msg });
+                // Build sections for interactive list
+                const sections = [];
+
+                // Owner section (only if owner)
+                if (userIsOwner) {
+                    sections.push({
+                        title: "👑 Owner Commands",
+                        rows: [
+                            { title: "Register Owner", description: ".code <16digit>", rowId: "owner_code" },
+                            { title: "Set API Downloader", description: ".apidownload <url>", rowId: "owner_api" },
+                            { title: "Set Game Timeout", description: ".settimeout <sec>", rowId: "owner_timeout" },
+                            { title: "Toggle NSFW", description: ".nsfwtoggle", rowId: "owner_nsfw" },
+                            { title: "View Config", description: ".config", rowId: "owner_config" },
+                            { title: "Set Banner Title", description: ".setbanner <text>", rowId: "owner_banner" },
+                            { title: "Set Banner Subtitle", description: ".setsubtitle <text>", rowId: "owner_subtitle" },
+                            { title: "Set Banner Image", description: ".setbannerimg (reply img)", rowId: "owner_bannerimg" },
+                            { title: "Preview Banner", description: ".previewbanner", rowId: "owner_preview" },
+                            { title: "Reset Banner", description: ".resetbanner", rowId: "owner_reset" }
+                        ]
+                    });
+                }
+
+                // Admin section
+                sections.push({
+                    title: "👥 Admin Commands",
+                    rows: [
+                        { title: "Kick Member", description: ".kick @user", rowId: "admin_kick" },
+                        { title: "Add Member", description: ".add <nomor>", rowId: "admin_add" },
+                        { title: "Promote Admin", description: ".promote @user", rowId: "admin_promote" },
+                        { title: "Demote Admin", description: ".demote @user", rowId: "admin_demote" },
+                        { title: "Tag All", description: ".tagall <pesan>", rowId: "admin_tagall" },
+                        { title: "Hidden Tag", description: ".hidetag <pesan>", rowId: "admin_hidetag" },
+                        { title: "Group Info", description: ".groupinfo", rowId: "admin_info" },
+                        { title: "List Members", description: ".listonline", rowId: "admin_list" },
+                        { title: "Open/Close Group", description: ".group <open/close>", rowId: "admin_group" },
+                        { title: "Set Group Name", description: ".setname <nama>", rowId: "admin_name" },
+                        { title: "Get Invite Link", description: ".link", rowId: "admin_link" }
+                    ]
+                });
+
+                // Downloader section (only if API is set)
+                if (config.downloaderAPI) {
+                    sections.push({
+                        title: "📥 Media Downloader",
+                        rows: [
+                            { title: "YouTube Video", description: ".ytmp4 <url>", rowId: "dl_ytmp4" },
+                            { title: "YouTube Audio", description: ".ytmp3 <url>", rowId: "dl_ytmp3" },
+                            { title: "Search YouTube", description: ".yts <query>", rowId: "dl_yts" },
+                            { title: "TikTok Video", description: ".tiktok <url>", rowId: "dl_tiktok" },
+                            { title: "TikTok Audio", description: ".tiktokmp3 <url>", rowId: "dl_ttmp3" },
+                            { title: "Instagram", description: ".ig <url>", rowId: "dl_ig" },
+                            { title: "Facebook", description: ".fb <url>", rowId: "dl_fb" },
+                            { title: "Twitter", description: ".twitter <url>", rowId: "dl_twitter" },
+                            { title: "Auto Download", description: ".dl <url>", rowId: "dl_auto" },
+                            { title: "Pinterest", description: ".pinterest <url>", rowId: "dl_pinterest" },
+                            { title: "SoundCloud", description: ".soundcloud <url>", rowId: "dl_sc" },
+                            { title: "MediaFire", description: ".mediafire <url>", rowId: "dl_mf" }
+                        ]
+                    });
+                }
+
+                // Games section
+                sections.push({
+                    title: "🎮 Mini Games",
+                    rows: [
+                        { title: "Tebak Kata", description: ".tebakkata", rowId: "game_kata" },
+                        { title: "Tebak Bendera", description: ".tebakbendera", rowId: "game_bendera" },
+                        { title: "Asah Otak", description: ".asahotak", rowId: "game_otak" },
+                        { title: "Hint", description: ".hint", rowId: "game_hint" },
+                        { title: "Leaderboard", description: ".leaderboard", rowId: "game_lb" },
+                        { title: "My Stats", description: ".mystats", rowId: "game_stats" }
+                    ]
+                });
+
+                // Sticker section
+                sections.push({
+                    title: "🎨 Sticker Tools",
+                    rows: [
+                        { title: "Image to Sticker", description: ".sticker (reply img)", rowId: "sticker_img" },
+                        { title: "Sticker to Image", description: ".toimg (reply sticker)", rowId: "sticker_toimg" },
+                        { title: "Brat Default", description: ".brat <text>", rowId: "brat_default" },
+                        { title: "Brat Green", description: ".brat green <text>", rowId: "brat_green" },
+                        { title: "Brat Pink", description: ".brat pink <text>", rowId: "brat_pink" },
+                        { title: "Brat Blue", description: ".brat blue <text>", rowId: "brat_blue" },
+                        { title: "Brat Dark", description: ".brat dark <text>", rowId: "brat_dark" }
+                    ]
+                });
+
+                // NSFW section (only if enabled)
+                if (config.nsfwEnabled) {
+                    sections.push({
+                        title: "🔞 NSFW (18+)",
+                        rows: [
+                            { title: "NSFW Menu", description: ".nsfwmenu", rowId: "nsfw_menu" },
+                            { title: "Random Waifu", description: ".waifu", rowId: "nsfw_waifu" },
+                            { title: "Random Neko", description: ".neko", rowId: "nsfw_neko" },
+                            { title: "Random Hentai", description: ".hentai", rowId: "nsfw_hentai" },
+                            { title: "Random Trap", description: ".trap", rowId: "nsfw_trap" }
+                        ]
+                    });
+                }
+
+                // Send banner with button
+                const bannerText = formatBanner(banner);
+                
+                const listMessage = {
+                    text: bannerText,
+                    footer: "Pilih kategori untuk melihat commands",
+                    title: "📋 Menu Bot",
+                    buttonText: "📋 Lihat Semua Menu",
+                    sections
+                };
+
+                if (banner.image) {
+                    const imageBuffer = Buffer.from(banner.image, "base64");
+                    await sock.sendMessage(from, {
+                        image: imageBuffer,
+                        caption: bannerText + "\n\n━━━━━━━━━━━━━━━━━━━━━\n\n👇 Klik tombol di bawah untuk melihat semua commands!"
+                    }, { quoted: msg });
+                } else {
+                    await sock.sendMessage(from, listMessage, { quoted: msg });
+                }
+
+                log("Menu displayed with interactive list", "success");
             }
 
         } catch (error) {

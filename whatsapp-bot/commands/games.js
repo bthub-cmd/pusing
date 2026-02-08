@@ -2,6 +2,9 @@ const fs = require("fs-extra");
 const path = require("path");
 const { loadConfig, loadDB, saveDB, random, log } = require("../utils/helpers");
 
+// Store timeouts in memory, not in JSON
+const activeTimeouts = new Map();
+
 async function handleGameCommands(sock, msg, body, from) {
     const config = loadConfig();
     const sessionsDB = loadDB("game-sessions");
@@ -67,14 +70,16 @@ async function handleGameCommands(sock, msg, body, from) {
                 mentions: [sender]
             }, { quoted: msg });
 
+            // Clear timeout from memory
+            const timeout = activeTimeouts.get(from);
+            if (timeout) {
+                clearTimeout(timeout);
+                activeTimeouts.delete(from);
+            }
+
             // Clear session
             delete sessionsDB.sessions[from];
             saveDB("game-sessions", sessionsDB);
-
-            // Clear timeout
-            if (session.timeout) {
-                clearTimeout(session.timeout);
-            }
 
             log(`Game answered correctly by ${senderNumber}`, "success");
             return;
@@ -101,7 +106,7 @@ async function handleGameCommands(sock, msg, body, from) {
 
         const question = random(gameData.questions);
         
-        // Create session
+        // Create session (without timeout object)
         sessionsDB.sessions[from] = {
             game: "tebakkata",
             question: question.question,
@@ -110,7 +115,7 @@ async function handleGameCommands(sock, msg, body, from) {
             startTime: Date.now()
         };
 
-        // Set timeout
+        // Set timeout in memory
         const timeout = setTimeout(async () => {
             if (sessionsDB.sessions[from]) {
                 await sock.sendMessage(from, {
@@ -121,10 +126,11 @@ async function handleGameCommands(sock, msg, body, from) {
 
                 delete sessionsDB.sessions[from];
                 saveDB("game-sessions", sessionsDB);
+                activeTimeouts.delete(from);
             }
         }, config.gameTimeout * 1000);
 
-        sessionsDB.sessions[from].timeout = timeout;
+        activeTimeouts.set(from, timeout);
         saveDB("game-sessions", sessionsDB);
 
         await sock.sendMessage(from, {
@@ -179,10 +185,11 @@ async function handleGameCommands(sock, msg, body, from) {
 
                 delete sessionsDB.sessions[from];
                 saveDB("game-sessions", sessionsDB);
+                activeTimeouts.delete(from);
             }
         }, config.gameTimeout * 1000);
 
-        sessionsDB.sessions[from].timeout = timeout;
+        activeTimeouts.set(from, timeout);
         saveDB("game-sessions", sessionsDB);
 
         await sock.sendMessage(from, {
@@ -235,10 +242,11 @@ async function handleGameCommands(sock, msg, body, from) {
 
                 delete sessionsDB.sessions[from];
                 saveDB("game-sessions", sessionsDB);
+                activeTimeouts.delete(from);
             }
         }, config.gameTimeout * 1000);
 
-        sessionsDB.sessions[from].timeout = timeout;
+        activeTimeouts.set(from, timeout);
         saveDB("game-sessions", sessionsDB);
 
         await sock.sendMessage(from, {
