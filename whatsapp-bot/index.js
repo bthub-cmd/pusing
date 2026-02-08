@@ -173,23 +173,53 @@ async function startBot() {
             // Original sticker features
             // Image to sticker
             if (msg.message.imageMessage && body === ".sticker") {
-                const buffer = await downloadMediaMessage(
-                    msg,
-                    "buffer",
-                    {},
-                    { logger: pino(), reuploadRequest: sock.updateMediaMessage }
-                );
+                try {
+                    const buffer = await downloadMediaMessage(
+                        msg,
+                        "buffer",
+                        {},
+                        { logger: pino(), reuploadRequest: sock.updateMediaMessage }
+                    );
 
-                const sticker = await sharp(buffer)
-                    .resize(512, 512, { 
-                        fit: "contain", 
-                        background: { r: 0, g: 0, b: 0, alpha: 0 } 
-                    })
-                    .webp({ quality: 80 })
-                    .toBuffer();
+                    // Get image metadata
+                    const metadata = await sharp(buffer).metadata();
+                    const width = metadata.width;
+                    const height = metadata.height;
+                    
+                    let resizeOptions;
+                    
+                    // Smart resize based on input size
+                    if (width >= 512 && height >= 512) {
+                        // Image is large enough, use cover (crop if needed)
+                        resizeOptions = {
+                            width: 512,
+                            height: 512,
+                            fit: "cover",
+                            position: "center"
+                        };
+                    } else {
+                        // Image is small, use contain (add transparent padding)
+                        resizeOptions = {
+                            width: 512,
+                            height: 512,
+                            fit: "contain",
+                            background: { r: 0, g: 0, b: 0, alpha: 0 }
+                        };
+                    }
 
-                await sock.sendMessage(from, { sticker: sticker }, { quoted: msg });
-                log("Image to sticker converted", "success");
+                    const sticker = await sharp(buffer)
+                        .resize(resizeOptions)
+                        .webp({ quality: 80 })
+                        .toBuffer();
+
+                    await sock.sendMessage(from, { sticker: sticker }, { quoted: msg });
+                    log(`Image to sticker converted (${width}x${height} → 512x512)`, "success");
+                } catch (error) {
+                    log(`Error creating sticker: ${error.message}`, "error");
+                    await sock.sendMessage(from, {
+                        text: `❌ *Gagal membuat sticker!*\n\n${error.message}`
+                    }, { quoted: msg });
+                }
             }
 
             // Sticker to image
@@ -288,135 +318,119 @@ async function startBot() {
                 log(`Brat sticker created (${colorPreset})`, "success");
             }
 
-            // Menu command with interactive button
+            // Menu command - Simple text with spacing
             if (body === ".menu" || body === ".help") {
                 const banner = loadBanner();
                 const userIsOwner = isOwner(sender, config);
 
-                // Build sections for interactive list
-                const sections = [];
+                // Build menu text
+                let menuText = formatBanner(banner) + "\n━━━━━━━━━━━━━━━━━━━━━\n\n";
 
-                // Owner section (only if owner)
+                // Owner commands (only if owner)
                 if (userIsOwner) {
-                    sections.push({
-                        title: "👑 Owner Commands",
-                        rows: [
-                            { title: "Register Owner", description: ".code <16digit>", rowId: "owner_code" },
-                            { title: "Set API Downloader", description: ".apidownload <url>", rowId: "owner_api" },
-                            { title: "Set Game Timeout", description: ".settimeout <sec>", rowId: "owner_timeout" },
-                            { title: "Toggle NSFW", description: ".nsfwtoggle", rowId: "owner_nsfw" },
-                            { title: "View Config", description: ".config", rowId: "owner_config" },
-                            { title: "Set Banner Title", description: ".setbanner <text>", rowId: "owner_banner" },
-                            { title: "Set Banner Subtitle", description: ".setsubtitle <text>", rowId: "owner_subtitle" },
-                            { title: "Set Banner Image", description: ".setbannerimg (reply img)", rowId: "owner_bannerimg" },
-                            { title: "Preview Banner", description: ".previewbanner", rowId: "owner_preview" },
-                            { title: "Reset Banner", description: ".resetbanner", rowId: "owner_reset" }
-                        ]
-                    });
+                    menuText += `👑 OWNER COMMANDS\n\n`;
+                    menuText += `├ .code <16digit> - Register owner\n`;
+                    menuText += `├ .apidownload <url> - Set API downloader\n`;
+                    menuText += `├ .settimeout <sec> - Set game timeout\n`;
+                    menuText += `├ .setnsfw on/off - Toggle NSFW\n`;
+                    menuText += `├ .config - View configuration\n`;
+                    menuText += `├ .setbanner <text> - Set banner title\n`;
+                    menuText += `├ .setsubtitle <text> - Set banner subtitle\n`;
+                    menuText += `├ .setdesc <text> - Set description\n`;
+                    menuText += `├ .setbannerimg - Set banner image (reply)\n`;
+                    menuText += `├ .removebannerimg - Remove banner image\n`;
+                    menuText += `├ .previewbanner - Preview banner\n`;
+                    menuText += `└ .resetbanner - Reset to default\n\n\n`;
                 }
 
-                // Admin section
-                sections.push({
-                    title: "👥 Admin Commands",
-                    rows: [
-                        { title: "Kick Member", description: ".kick @user", rowId: "admin_kick" },
-                        { title: "Add Member", description: ".add <nomor>", rowId: "admin_add" },
-                        { title: "Promote Admin", description: ".promote @user", rowId: "admin_promote" },
-                        { title: "Demote Admin", description: ".demote @user", rowId: "admin_demote" },
-                        { title: "Tag All", description: ".tagall <pesan>", rowId: "admin_tagall" },
-                        { title: "Hidden Tag", description: ".hidetag <pesan>", rowId: "admin_hidetag" },
-                        { title: "Group Info", description: ".groupinfo", rowId: "admin_info" },
-                        { title: "List Members", description: ".listonline", rowId: "admin_list" },
-                        { title: "Open/Close Group", description: ".group <open/close>", rowId: "admin_group" },
-                        { title: "Set Group Name", description: ".setname <nama>", rowId: "admin_name" },
-                        { title: "Get Invite Link", description: ".link", rowId: "admin_link" }
-                    ]
-                });
+                // Admin commands
+                menuText += `👥 ADMIN COMMANDS\n\n`;
+                menuText += `├ .kick @user - Kick member\n`;
+                menuText += `├ .add <nomor> - Add member\n`;
+                menuText += `├ .promote @user - Promote to admin\n`;
+                menuText += `├ .demote @user - Demote admin\n`;
+                menuText += `├ .tagall <msg> - Tag all members\n`;
+                menuText += `├ .hidetag <msg> - Hidden tag\n`;
+                menuText += `├ .groupinfo - Group information\n`;
+                menuText += `├ .listonline - List members\n`;
+                menuText += `├ .group open/close - Open/close group\n`;
+                menuText += `├ .setname <nama> - Change group name\n`;
+                menuText += `├ .setdesc <text> - Change description\n`;
+                menuText += `└ .link - Get invite link\n\n\n`;
 
-                // Downloader section (only if API is set)
+                // Downloader (only if API is set)
                 if (config.downloaderAPI) {
-                    sections.push({
-                        title: "📥 Media Downloader",
-                        rows: [
-                            { title: "YouTube Video", description: ".ytmp4 <url>", rowId: "dl_ytmp4" },
-                            { title: "YouTube Audio", description: ".ytmp3 <url>", rowId: "dl_ytmp3" },
-                            { title: "Search YouTube", description: ".yts <query>", rowId: "dl_yts" },
-                            { title: "TikTok Video", description: ".tiktok <url>", rowId: "dl_tiktok" },
-                            { title: "TikTok Audio", description: ".tiktokmp3 <url>", rowId: "dl_ttmp3" },
-                            { title: "Instagram", description: ".ig <url>", rowId: "dl_ig" },
-                            { title: "Facebook", description: ".fb <url>", rowId: "dl_fb" },
-                            { title: "Twitter", description: ".twitter <url>", rowId: "dl_twitter" },
-                            { title: "Auto Download", description: ".dl <url>", rowId: "dl_auto" },
-                            { title: "Pinterest", description: ".pinterest <url>", rowId: "dl_pinterest" },
-                            { title: "SoundCloud", description: ".soundcloud <url>", rowId: "dl_sc" },
-                            { title: "MediaFire", description: ".mediafire <url>", rowId: "dl_mf" }
-                        ]
-                    });
+                    menuText += `📥 MEDIA DOWNLOADER\n\n`;
+                    menuText += `├ .ytmp4 <url> - YouTube video\n`;
+                    menuText += `├ .ytmp3 <url> - YouTube audio\n`;
+                    menuText += `├ .yts <query> - Search YouTube\n`;
+                    menuText += `├ .tiktok <url> - TikTok no watermark\n`;
+                    menuText += `├ .tiktokmp3 <url> - TikTok audio\n`;
+                    menuText += `├ .ig <url> - Instagram post/reel\n`;
+                    menuText += `├ .fb <url> - Facebook video\n`;
+                    menuText += `├ .twitter <url> - Twitter media\n`;
+                    menuText += `├ .dl <url> - Auto-detect platform\n`;
+                    menuText += `├ .pinterest <url> - Pinterest image\n`;
+                    menuText += `├ .soundcloud <url> - SoundCloud audio\n`;
+                    menuText += `└ .mediafire <url> - MediaFire file\n\n\n`;
                 }
 
-                // Games section
-                sections.push({
-                    title: "🎮 Mini Games",
-                    rows: [
-                        { title: "Tebak Kata", description: ".tebakkata", rowId: "game_kata" },
-                        { title: "Tebak Bendera", description: ".tebakbendera", rowId: "game_bendera" },
-                        { title: "Asah Otak", description: ".asahotak", rowId: "game_otak" },
-                        { title: "Hint", description: ".hint", rowId: "game_hint" },
-                        { title: "Leaderboard", description: ".leaderboard", rowId: "game_lb" },
-                        { title: "My Stats", description: ".mystats", rowId: "game_stats" }
-                    ]
-                });
+                // Games
+                menuText += `🎮 MINI GAMES\n\n`;
+                menuText += `├ .tebakkata - Tebak kata\n`;
+                menuText += `├ .tebakbendera - Tebak bendera\n`;
+                menuText += `├ .asahotak - Asah otak\n`;
+                menuText += `├ .hint - Show hint\n`;
+                menuText += `├ .leaderboard - Top players\n`;
+                menuText += `└ .mystats - Your statistics\n\n\n`;
 
-                // Sticker section
-                sections.push({
-                    title: "🎨 Sticker Tools",
-                    rows: [
-                        { title: "Image to Sticker", description: ".sticker (reply img)", rowId: "sticker_img" },
-                        { title: "Sticker to Image", description: ".toimg (reply sticker)", rowId: "sticker_toimg" },
-                        { title: "Brat Default", description: ".brat <text>", rowId: "brat_default" },
-                        { title: "Brat Green", description: ".brat green <text>", rowId: "brat_green" },
-                        { title: "Brat Pink", description: ".brat pink <text>", rowId: "brat_pink" },
-                        { title: "Brat Blue", description: ".brat blue <text>", rowId: "brat_blue" },
-                        { title: "Brat Dark", description: ".brat dark <text>", rowId: "brat_dark" }
-                    ]
-                });
+                // Sticker tools
+                menuText += `🎨 STICKER TOOLS\n\n`;
+                menuText += `├ .sticker - Image to sticker (reply)\n`;
+                menuText += `├ .toimg - Sticker to image (reply)\n`;
+                menuText += `├ .brat <text> - Brat white/black\n`;
+                menuText += `├ .brat green <text> - Brat green/black\n`;
+                menuText += `├ .brat pink <text> - Brat pink/white\n`;
+                menuText += `├ .brat blue <text> - Brat blue/white\n`;
+                menuText += `└ .brat dark <text> - Brat black/white\n\n\n`;
 
-                // NSFW section (only if enabled)
+                // NSFW (only if enabled)
                 if (config.nsfwEnabled) {
-                    sections.push({
-                        title: "🔞 NSFW (18+)",
-                        rows: [
-                            { title: "NSFW Menu", description: ".nsfwmenu", rowId: "nsfw_menu" },
-                            { title: "Random Waifu", description: ".waifu", rowId: "nsfw_waifu" },
-                            { title: "Random Neko", description: ".neko", rowId: "nsfw_neko" },
-                            { title: "Random Hentai", description: ".hentai", rowId: "nsfw_hentai" },
-                            { title: "Random Trap", description: ".trap", rowId: "nsfw_trap" }
-                        ]
-                    });
+                    menuText += `🔞 NSFW (18+)\n\n`;
+                    menuText += `├ .nsfwmenu - NSFW menu\n`;
+                    menuText += `├ .waifu - Random waifu\n`;
+                    menuText += `├ .neko - Random neko\n`;
+                    menuText += `├ .hentai - Random hentai\n`;
+                    menuText += `├ .trap - Random trap\n`;
+                    menuText += `├ .xvideos <query> - Search Xvideos\n`;
+                    menuText += `└ .xnxx <query> - Search XNXX\n\n\n`;
                 }
 
-                // Send banner with button
-                const bannerText = formatBanner(banner);
-                
-                const listMessage = {
-                    text: bannerText,
-                    footer: "Pilih kategori untuk melihat commands",
-                    title: "📋 Menu Bot",
-                    buttonText: "📋 Lihat Semua Menu",
-                    sections
-                };
+                menuText += `━━━━━━━━━━━━━━━━━━━━━\n`;
+                menuText += `Prefix: ${config.prefix}`;
 
+                // Send menu with or without banner image
                 if (banner.image) {
-                    const imageBuffer = Buffer.from(banner.image, "base64");
-                    await sock.sendMessage(from, {
-                        image: imageBuffer,
-                        caption: bannerText + "\n\n━━━━━━━━━━━━━━━━━━━━━\n\n👇 Klik tombol di bawah untuk melihat semua commands!"
-                    }, { quoted: msg });
+                    try {
+                        const imageBuffer = Buffer.from(banner.image, "base64");
+                        await sock.sendMessage(from, {
+                            image: imageBuffer,
+                            caption: menuText
+                        }, { quoted: msg });
+                    } catch (error) {
+                        // Fallback to text only if image fails
+                        await sock.sendMessage(from, {
+                            text: menuText
+                        }, { quoted: msg });
+                    }
                 } else {
-                    await sock.sendMessage(from, listMessage, { quoted: msg });
+                    await sock.sendMessage(from, {
+                        text: menuText
+                    }, { quoted: msg });
                 }
 
-                log("Menu displayed with interactive list", "success");
+                log("Menu displayed", "success");
+            }
             }
 
         } catch (error) {

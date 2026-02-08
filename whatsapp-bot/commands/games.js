@@ -12,6 +12,8 @@ async function handleGameCommands(sock, msg, body, from) {
     const sender = msg.key.remoteJid;
     const senderNumber = sender.split("@")[0];
 
+    console.log(`[GAME] Handler called with body: "${body}"`);
+
     // Helper to load game data
     function loadGameData(gameName) {
         const gamePath = path.join(__dirname, "..", "games", `${gameName}.json`);
@@ -51,8 +53,8 @@ async function handleGameCommands(sock, msg, body, from) {
         saveDB("leaderboard", leaderboardDB);
     }
 
-    // Check for active game answer
-    if (sessionsDB.sessions[from]) {
+    // Check for active game answer (but skip if it's a command)
+    if (sessionsDB.sessions[from] && !body.startsWith(config.prefix)) {
         const session = sessionsDB.sessions[from];
         const userAnswer = body.toLowerCase().trim();
         const correctAnswer = session.answer.toLowerCase().trim();

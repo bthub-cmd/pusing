@@ -1,0 +1,113 @@
+            // Menu command - Simple text with spacing
+            if (body === ".menu" || body === ".help") {
+                const banner = loadBanner();
+                const userIsOwner = isOwner(sender, config);
+
+                // Build menu text
+                let menuText = formatBanner(banner) + "\n━━━━━━━━━━━━━━━━━━━━━\n\n";
+
+                // Owner commands (only if owner)
+                if (userIsOwner) {
+                    menuText += `👑 OWNER COMMANDS\n\n`;
+                    menuText += `├ .code <16digit> - Register owner\n`;
+                    menuText += `├ .apidownload <url> - Set API downloader\n`;
+                    menuText += `├ .settimeout <sec> - Set game timeout\n`;
+                    menuText += `├ .setnsfw on/off - Toggle NSFW\n`;
+                    menuText += `├ .config - View configuration\n`;
+                    menuText += `├ .setbanner <text> - Set banner title\n`;
+                    menuText += `├ .setsubtitle <text> - Set banner subtitle\n`;
+                    menuText += `├ .setdesc <text> - Set description\n`;
+                    menuText += `├ .setbannerimg - Set banner image (reply)\n`;
+                    menuText += `├ .removebannerimg - Remove banner image\n`;
+                    menuText += `├ .previewbanner - Preview banner\n`;
+                    menuText += `└ .resetbanner - Reset to default\n\n\n`;
+                }
+
+                // Admin commands
+                menuText += `👥 ADMIN COMMANDS\n\n`;
+                menuText += `├ .kick @user - Kick member\n`;
+                menuText += `├ .add <nomor> - Add member\n`;
+                menuText += `├ .promote @user - Promote to admin\n`;
+                menuText += `├ .demote @user - Demote admin\n`;
+                menuText += `├ .tagall <msg> - Tag all members\n`;
+                menuText += `├ .hidetag <msg> - Hidden tag\n`;
+                menuText += `├ .groupinfo - Group information\n`;
+                menuText += `├ .listonline - List members\n`;
+                menuText += `├ .group open/close - Open/close group\n`;
+                menuText += `├ .setname <nama> - Change group name\n`;
+                menuText += `├ .setdesc <text> - Change description\n`;
+                menuText += `└ .link - Get invite link\n\n\n`;
+
+                // Downloader (only if API is set)
+                if (config.downloaderAPI) {
+                    menuText += `📥 MEDIA DOWNLOADER\n\n`;
+                    menuText += `├ .ytmp4 <url> - YouTube video\n`;
+                    menuText += `├ .ytmp3 <url> - YouTube audio\n`;
+                    menuText += `├ .yts <query> - Search YouTube\n`;
+                    menuText += `├ .tiktok <url> - TikTok no watermark\n`;
+                    menuText += `├ .tiktokmp3 <url> - TikTok audio\n`;
+                    menuText += `├ .ig <url> - Instagram post/reel\n`;
+                    menuText += `├ .fb <url> - Facebook video\n`;
+                    menuText += `├ .twitter <url> - Twitter media\n`;
+                    menuText += `├ .dl <url> - Auto-detect platform\n`;
+                    menuText += `├ .pinterest <url> - Pinterest image\n`;
+                    menuText += `├ .soundcloud <url> - SoundCloud audio\n`;
+                    menuText += `└ .mediafire <url> - MediaFire file\n\n\n`;
+                }
+
+                // Games
+                menuText += `🎮 MINI GAMES\n\n`;
+                menuText += `├ .tebakkata - Tebak kata\n`;
+                menuText += `├ .tebakbendera - Tebak bendera\n`;
+                menuText += `├ .asahotak - Asah otak\n`;
+                menuText += `├ .hint - Show hint\n`;
+                menuText += `├ .leaderboard - Top players\n`;
+                menuText += `└ .mystats - Your statistics\n\n\n`;
+
+                // Sticker tools
+                menuText += `🎨 STICKER TOOLS\n\n`;
+                menuText += `├ .sticker - Image to sticker (reply)\n`;
+                menuText += `├ .toimg - Sticker to image (reply)\n`;
+                menuText += `├ .brat <text> - Brat white/black\n`;
+                menuText += `├ .brat green <text> - Brat green/black\n`;
+                menuText += `├ .brat pink <text> - Brat pink/white\n`;
+                menuText += `├ .brat blue <text> - Brat blue/white\n`;
+                menuText += `└ .brat dark <text> - Brat black/white\n\n\n`;
+
+                // NSFW (only if enabled)
+                if (config.nsfwEnabled) {
+                    menuText += `🔞 NSFW (18+)\n\n`;
+                    menuText += `├ .nsfwmenu - NSFW menu\n`;
+                    menuText += `├ .waifu - Random waifu\n`;
+                    menuText += `├ .neko - Random neko\n`;
+                    menuText += `├ .hentai - Random hentai\n`;
+                    menuText += `├ .trap - Random trap\n`;
+                    menuText += `├ .xvideos <query> - Search Xvideos\n`;
+                    menuText += `└ .xnxx <query> - Search XNXX\n\n\n`;
+                }
+
+                menuText += `━━━━━━━━━━━━━━━━━━━━━\n`;
+                menuText += `Prefix: ${config.prefix}`;
+
+                // Send menu with or without banner image
+                if (banner.image) {
+                    try {
+                        const imageBuffer = Buffer.from(banner.image, "base64");
+                        await sock.sendMessage(from, {
+                            image: imageBuffer,
+                            caption: menuText
+                        }, { quoted: msg });
+                    } catch (error) {
+                        // Fallback to text only if image fails
+                        await sock.sendMessage(from, {
+                            text: menuText
+                        }, { quoted: msg });
+                    }
+                } else {
+                    await sock.sendMessage(from, {
+                        text: menuText
+                    }, { quoted: msg });
+                }
+
+                log("Menu displayed", "success");
+            }

@@ -106,13 +106,22 @@ async function handleOwnerCommands(sock, msg, body, from) {
     }
 
     // Toggle NSFW
-    if (body === ".nsfwtoggle") {
-        config.nsfwEnabled = !config.nsfwEnabled;
+    if (body.startsWith(".setnsfw ")) {
+        const action = body.replace(".setnsfw ", "").toLowerCase().trim();
+        
+        if (action !== "on" && action !== "off") {
+            await sock.sendMessage(from, {
+                text: "❌ *Parameter tidak valid!*\n\nGunakan: .setnsfw on atau .setnsfw off"
+            }, { quoted: msg });
+            return;
+        }
+        
+        config.nsfwEnabled = (action === "on");
         saveConfig(config);
 
         const status = config.nsfwEnabled ? "AKTIF ✅" : "NONAKTIF ❌";
         
-        log(`NSFW toggled: ${config.nsfwEnabled}`, "warn");
+        log(`NSFW set to: ${action}`, "warn");
 
         await sock.sendMessage(from, {
             text: `🔞 *NSFW Mode: ${status}*\n\n` +

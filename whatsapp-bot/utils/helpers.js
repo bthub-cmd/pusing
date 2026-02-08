@@ -71,11 +71,49 @@ async function isAdmin(sock, groupJid, userJid) {
 async function isBotAdmin(sock, groupJid) {
     try {
         const groupMetadata = await sock.groupMetadata(groupJid);
-        const botJid = sock.user.id.split(':')[0] + "@s.whatsapp.net";
-        const participant = groupMetadata.participants.find(p => p.id === botJid);
-        return participant && (participant.admin === "admin" || participant.admin === "superadmin");
+        
+        // Get bot JID using multiple methods (fallback)
+        let botJid = null;
+        
+        // Method 1: Standard format
+        if (sock.user && sock.user.id) {
+            botJid = sock.user.id.replace(/:\d+/, '') + "@s.whatsapp.net";
+        }
+        
+        // Method 2: Direct JID
+        if (!botJid && sock.user && sock.user.jid) {
+            botJid = sock.user.jid;
+        }
+        
+        // Method 3: From user.id without modification
+        if (!botJid && sock.user && sock.user.id) {
+            botJid = sock.user.id;
+        }
+        
+        if (!botJid) {
+            console.error("Cannot determine bot JID");
+            return false;
+        }
+        
+        // Find bot in participants
+        const participant = groupMetadata.participants.find(p => {
+            // Try exact match and partial match
+            return p.id === botJid || 
+                   p.id.split('@')[0] === botJid.split('@')[0] ||
+                   p.id.split(':')[0] === botJid.split(':')[0];
+        });
+        
+        if (!participant) {
+            console.error(`Bot not found in group. Bot JID: ${botJid}`);
+            return false;
+        }
+        
+        const isAdmin = participant.admin === "admin" || participant.admin === "superadmin";
+        console.log(`Bot admin status: ${isAdmin}, role: ${participant.admin || 'member'}`);
+        
+        return isAdmin;
     } catch (error) {
-        console.error("Error checking bot admin:", error);
+        console.error("Error checking bot admin:", error.message);
         return false;
     }
 }
